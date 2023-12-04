@@ -3,7 +3,14 @@ import re
 import ast
 import numpy as np
 import pandas as pd
-from nltk.tokenize import RegexpTokenizer
+import nltk
+from nltk.tokenize import RegexpTokenizer, word_tokenize
+from nltk.tag import pos_tag
+from nltk.sentiment import SentimentIntensityAnalyzer
+
+nltk.download('averaged_perceptron_tagger')
+nltk.download('punkt')
+nltk.download('vader_lexicon')
 
 def contains(x): 
     return int("shared" in str(x).lower())
@@ -18,6 +25,21 @@ def wordCount(x):
     tokenizer = RegexpTokenizer(r'\w+') 
     tokens = tokenizer.tokenize(x)
     return len(tokens) 
+
+def numAdjectives(text): 
+    words = word_tokenize(text)
+
+    # Tag each word with its part of speech
+    pos_tags = pos_tag(words)
+
+    # Count the adjectives
+    adjective_count = sum(1 for word, tag in pos_tags if tag.startswith('JJ'))
+
+    return adjective_count
+
+def sentiment(text):
+    sia = SentimentIntensityAnalyzer()
+    return sia.polarity_scores(text)
 
 def numBedroom(x): 
     if "bedroom" not in x: 
@@ -43,9 +65,14 @@ def preprocess(df:pd.DataFrame):
     
     df = df.drop(["id", "scrape_id", "last_scraped", "calendar_last_scraped", "host_since"], axis=1)
     
-    df.loc[df["host_is_superhost"] == "f", "host_is_superhost"] = -1 
-    df.loc[df["host_is_superhost"] == "t", "host_is_superhost"] = 1 
-    df["host_is_superhost"] = df["host_is_superhost"].fillna(0) 
+    df['host_is_superhost'] = df['host_is_superhost'].fillna('unknown')
+    one_hot_encoded = pd.get_dummies(df['host_is_superhost'], prefix='superhost')
+    one_hot_encoded = one_hot_encoded.rename(columns={
+        'superhost_t': 'superhost_true',
+        'superhost_f': 'superhost_false',
+        'superhost_unknown': 'superhost_unknown'
+    }).astype(int)
+    df = df.drop('host_is_superhost', axis=1).join(one_hot_encoded)
 
     for col in ["host_has_profile_pic", "host_identity_verified", "has_availability", "instant_bookable"]: 
         df.loc[df[col] == "f", col] = 0
@@ -62,14 +89,11 @@ def preprocess(df:pd.DataFrame):
     dummies = dummies.fillna(0).astype(int)
     df = df.join(dummies)
     
-    # dummies = df["amenities"].apply(lambda x : pd.Series({amen: 1 for amen in ast.literal_eval(x)}))
-    # dummies = dummies.fillna(0).astype(int)
-    # df = df.join(dummies)
+
     df["amenities"] = df["amenities"].apply(lambda x : len(ast.literal_eval(x))) 
     df = df.drop(["host_verifications", "amenities"], axis=1)
     
     # property_type and room_type 
-    
     dummies = pd.get_dummies(df["room_type"])
     df = df.join(dummies) 
     df = df.drop(["property_type", "room_type"], axis=1)
@@ -79,11 +103,23 @@ def preprocess(df:pd.DataFrame):
     df["rating"] = df["name"].apply(rating)
     
     # Take 'description' and extract the number of adjectives as a measure of "flashiness" of description
-    df["description"] = df["description"].apply(wordCount)
+    
+    # iterate through descriptions and calculate sentiment scores
+    sentiments = df['description'].apply(sentiment)
+    
+    df["wordCount"] = df["description"].apply(wordCount)
+    df["numAdjectives"] = df["description"].apply(numAdjectives)
+    df["sentimentCompound"] = sentiments.apply(lambda x : x['compound'])
+    df["sentimentPos"] = sentiments.apply(lambda x : x['pos'])
+    df["sentimentNeg"] = sentiments.apply(lambda x : x['neg'])
+    df["sentimentNeu"] = sentiments.apply(lambda x : x['neu'])
+    df = df.drop(["description"], axis=1)
+    
+    one_hot = pd.get_dummies(df['neighbourhood_group_cleansed'])
+    df = df.join(one_hot)
     
     # image 
     df = df.drop(["picture_url", "name", "neighbourhood_cleansed", "neighbourhood_group_cleansed"], axis=1)
     
-    # df = df.to_numpy().astype(float)
     
     return df
