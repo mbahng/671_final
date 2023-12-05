@@ -71,17 +71,8 @@ def preprocess(df:pd.DataFrame):
     df["num_days_hosted"] = (df["last_scraped"] - df['host_since']).dt.days
     
     df = df.drop(["id", "scrape_id", "last_scraped", "calendar_last_scraped", "host_since"], axis=1)
-    
-    df['host_is_superhost'] = df['host_is_superhost'].fillna('unknown')
-    one_hot_encoded = pd.get_dummies(df['host_is_superhost'], prefix='superhost')
-    one_hot_encoded = one_hot_encoded.rename(columns={
-        'superhost_t': 'superhost_true',
-        'superhost_f': 'superhost_false',
-        'superhost_unknown': 'superhost_unknown'
-    }).astype(int)
-    df = df.drop('host_is_superhost', axis=1).join(one_hot_encoded)
 
-    for col in ["host_has_profile_pic", "host_identity_verified", "has_availability", "instant_bookable"]: 
+    for col in ["host_has_profile_pic", "host_identity_verified", "has_availability", "instant_bookable", "host_is_superhost"]: 
         df.loc[df[col] == "f", col] = 0
         df.loc[df[col] == "t", col] = 1
     
@@ -89,7 +80,7 @@ def preprocess(df:pd.DataFrame):
     df["num_baths"] = df["bathrooms_text"].apply(numBath)
     df = df.drop(["bathrooms_text"], axis=1)
     
-    df = df.drop(["host_name"], axis=1)
+    df = df.drop(["host_name", "host_id"], axis=1)
     
     # one hot encode 
     dummies = df['host_verifications'].apply(lambda x: pd.Series({veri: 1 for veri in ast.literal_eval(x)}))
@@ -119,14 +110,14 @@ def preprocess(df:pd.DataFrame):
     # Take 'description' and extract the number of adjectives as a measure of "flashiness" of description
     
     # iterate through descriptions and calculate sentiment scores
-    # sentiments = df['description'].apply(sentiment)
+    sentiments = df['description'].apply(sentiment)
     
     df["wordCount"] = df["description"].apply(wordCount)
     df["numAdjectives"] = df["description"].apply(numAdjectives)
-    # df["sentimentCompound"] = sentiments.apply(lambda x : x['compound'])
-    # df["sentimentPos"] = sentiments.apply(lambda x : x['pos'])
-    # df["sentimentNeg"] = sentiments.apply(lambda x : x['neg'])
-    # df["sentimentNeu"] = sentiments.apply(lambda x : x['neu'])
+    df["sentimentCompound"] = sentiments.apply(lambda x : x['compound'])
+    df["sentimentPos"] = sentiments.apply(lambda x : x['pos'])
+    df["sentimentNeg"] = sentiments.apply(lambda x : x['neg'])
+    df["sentimentNeu"] = sentiments.apply(lambda x : x['neu'])
     df = df.drop(["description"], axis=1)
     
     one_hot = pd.get_dummies(df['neighbourhood_group_cleansed'])
